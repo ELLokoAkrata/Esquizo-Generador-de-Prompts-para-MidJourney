@@ -101,7 +101,30 @@ st.divider()
 # --- Barra Lateral de Controles ---
 with st.sidebar:
     st.header("Controles de Generación")
+
+    # --- Selector de Modelo ---
+    model_options = ("openai/gpt-oss-20b", "deepseek-r1-distill-llama-70b", "moonshotai/kimi-k2-instruct")
     
+    if "selected_model" not in st.session_state:
+        st.session_state.selected_model = model_options[0]
+
+    # Guardar el modelo anterior para poder detectar el cambio
+    previous_model = st.session_state.selected_model
+
+    # El widget selectbox actualiza el estado de la sesión directamente.
+    # Streamlit se encarga de volver a ejecutar el script cuando el valor cambia.
+    st.session_state.selected_model = st.selectbox(
+        "Elige el Modelo de IA Creativa:",
+        model_options,
+        index=model_options.index(st.session_state.selected_model),
+        help="Selecciona el motor de IA que generará los prompts. Cada uno tiene un 'sabor' creativo distinto."
+    )
+
+    # Si el modelo en el estado de la sesión ha cambiado respecto al de la ejecución anterior, muestra la confirmación.
+    if st.session_state.selected_model != previous_model:
+        print(f"INFO: Modelo de IA cambiado a: {st.session_state.selected_model}")
+        st.success(f"Modelo cambiado a: **{st.session_state.selected_model}**")
+
     uploaded_file = st.file_uploader(
         "Carga una imagen para el análisis (Opcional)", 
         type=["jpg", "jpeg", "png"]
@@ -150,21 +173,29 @@ if generate_button:
                 st.error("No se pudo obtener la descripción de la imagen. Se procederá solo con el texto.")
         
         # --- FASE 2: SÍNTESIS CREATIVA ---
-        messages = [
+        # Se crea una lista de mensajes base que se expandirá en cada iteración
+        base_messages = [
             SYSTEM_MESSAGE_TEXT_GENERATION,
             {"role": "user", "content": final_user_prompt}
         ]
         
+        # La lista de mensajes se actualiza en cada iteración para mantener el contexto
+        messages_for_variation = list(base_messages)
+
         for i in range(num_variations):
             placeholder = st.empty()
             placeholder.info(f"✨ Generando variación creativa {i + 1}/{num_variations}...")
             
+            # Si no es la primera vuelta, se añade una instrucción para diversificar
+            if i > 0:
+                messages_for_variation.append({"role": "user", "content": "Ahora, dame una variación completamente diferente y única, explorando un ángulo creativo distinto."})
+
             start_time = time.time()
             
             try:
                 response = client.chat.completions.create(
-                    model="openai/gpt-oss-20b", # Siempre usamos el modelo de texto para la creatividad
-                    messages=messages,
+                    model=st.session_state.selected_model, # Usar el modelo seleccionado de la sesión
+                    messages=messages_for_variation,
                     temperature=1.15,
                     max_tokens=1024,
                     top_p=0.9,
@@ -188,6 +219,9 @@ if generate_button:
                 
                 final_prompt = f"{assistant_message.strip()} {extra_params}"
                 
+                # Se añade la respuesta del asistente al contexto para la siguiente iteración
+                messages_for_variation.append({"role": "assistant", "content": assistant_message.strip()})
+
                 # Actualizar el resultado final en el placeholder
                 with placeholder.container():
                     st.markdown(f"**Variación {i + 1}** (Generada en {duration:.2f}s)")
